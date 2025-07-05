@@ -1,4 +1,6 @@
-streamlit
+ streamlit
 pandas
 qrcode
-pillow
+fpdf
+Pillow
+
