@@ -3,9 +3,10 @@ import pandas as pd
 import qrcode
 from PIL import Image
 import io, base64
+from fpdf import FPDF
 
 # Set your password here
-APP_PASSWORD = "wallet123"  # Change to whatever you want
+APP_PASSWORD = "wallet123"
 
 # Password protection
 if "unlocked" not in st.session_state:
@@ -30,10 +31,10 @@ def generate_qr(wallet_address):
     )
     qr.add_data(wallet_address)
     qr.make(fit=True)
-    img = qr.make_image(fill='black', back_color='white')
+    img = qr.make_image(fill_color='black', back_color='white')
     return img
 
-# Mobile-friendly adjustments
+# Mobile-friendly layout tweaks
 st.markdown("""
     <style>
         .block-container {
@@ -59,6 +60,10 @@ st.markdown("<h1 style='font-size:22px;text-align:center;'>Crypto Wallet Manager
 # Upload CSV
 uploaded_file = st.file_uploader("Upload your wallet CSV", type="csv")
 
+# Prepare to build PDF
+pdf = FPDF()
+pdf.set_auto_page_break(auto=True, margin=15)
+
 if uploaded_file:
     st.success("✅ File uploaded!")
     df = pd.read_csv(uploaded_file)
@@ -79,11 +84,17 @@ if uploaded_file:
             </div>
             """, unsafe_allow_html=True)
 
+            pdf.add_page()
+            pdf.set_font("Arial", 'B', 16)
+            pdf.cell(200, 10, txt=wallet_type, ln=True, align='C')
+
             for _, row in group.iterrows():
                 wallet_name = row['Wallet Name']
                 wallet_address = row['Wallet Address']
 
                 img = generate_qr(wallet_address)
+
+                # Display in app
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")
                 data = base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -96,8 +107,28 @@ if uploaded_file:
                     {img_tag}
                 </div>
                 """, unsafe_allow_html=True)
+
+                # Add to PDF
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(200, 10, txt=wallet_name, ln=True)
+                pdf.set_font("Arial", '', 10)
+                pdf.multi_cell(0, 8, f"Address: {wallet_address}")
+                qr_buf = io.BytesIO()
+                img.save(qr_buf, format="PNG")
+                pdf.image(qr_buf, x=10, w=50)
+                pdf.ln(10)
+
+        # Create downloadable PDF
+        pdf_output = io.BytesIO()
+        pdf.output(pdf_output)
+        st.download_button(
+            label="📄 Download Wallets PDF",
+            data=pdf_output.getvalue(),
+            file_name="crypto_wallets.pdf",
+            mime="application/pdf"
+        )
+
     else:
         st.error("CSV file must have a column named 'Wallet Type'.")
 else:
     st.info("Please upload a CSV file to begin.")
-
