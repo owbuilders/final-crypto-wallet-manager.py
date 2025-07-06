@@ -1,4 +1,4 @@
-import streamlit as st
+ import streamlit as st
 import pandas as pd
 import qrcode
 from PIL import Image
@@ -74,8 +74,19 @@ if uploaded_file:
     df['Wallet Name'] = df['Wallet Name'].astype(str).str.strip()
     df['Wallet Address'] = df['Wallet Address'].astype(str).str.strip()
 
-    if 'Wallet Type' in df.columns:
-        grouped = df.groupby('Wallet Type')
+    wallet_names = df['Wallet Name'].unique().tolist()
+    selected_wallet = st.selectbox("Select Wallet Name", ["All"] + wallet_names)
+
+    filtered_df = df if selected_wallet == "All" else df[df['Wallet Name'] == selected_wallet]
+
+    coin_names = filtered_df['Coin Name'].unique().tolist() if 'Coin Name' in df.columns else []
+    selected_coin = st.selectbox("Select Coin Name", ["All"] + coin_names) if coin_names else "All"
+
+    if selected_coin != "All":
+        filtered_df = filtered_df[filtered_df['Coin Name'] == selected_coin]
+
+    if 'Wallet Type' in filtered_df.columns:
+        grouped = filtered_df.groupby('Wallet Type')
 
         for wallet_type, group in grouped:
             group = group.sort_values(by='Wallet Name')
@@ -96,7 +107,6 @@ if uploaded_file:
 
                 img = generate_qr(wallet_address)
 
-                # Display in app
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")
                 data = base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -110,7 +120,6 @@ if uploaded_file:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Save QR temporarily and insert into PDF
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
                     temp_path = tmpfile.name
                     img.save(temp_path)
@@ -124,7 +133,6 @@ if uploaded_file:
 
                 os.remove(temp_path)
 
-        # Create downloadable PDF
         pdf_output = io.BytesIO()
         pdf.output(pdf_output)
         st.download_button(
@@ -133,6 +141,7 @@ if uploaded_file:
             file_name="crypto_wallets.pdf",
             mime="application/pdf"
         )
+
     else:
         st.error("CSV file must have a column named 'Wallet Type'.")
 else:
