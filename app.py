@@ -4,6 +4,8 @@ import qrcode
 from PIL import Image
 import io, base64
 from fpdf import FPDF
+import os
+import tempfile
 
 # Set your password here
 APP_PASSWORD = "wallet123"
@@ -16,7 +18,7 @@ if not st.session_state.unlocked:
     password = st.text_input("Enter password to access the wallet manager", type="password")
     if password == APP_PASSWORD:
         st.session_state.unlocked = True
-        st.experimental_rerun()
+        st.rerun()
     elif password != "":
         st.error("Incorrect password.")
     st.stop()
@@ -108,15 +110,16 @@ if uploaded_file:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Add to PDF
-                pdf.set_font("Arial", 'B', 12)
-                pdf.cell(200, 10, txt=wallet_name, ln=True)
-                pdf.set_font("Arial", '', 10)
-                pdf.multi_cell(0, 8, f"Address: {wallet_address}")
-                qr_buf = io.BytesIO()
-                img.save(qr_buf, format="PNG")
-                pdf.image(qr_buf, x=10, w=50)
-                pdf.ln(10)
+                # Save QR temporarily and insert into PDF
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
+                    img.save(tmpfile.name)
+                    pdf.set_font("Arial", 'B', 12)
+                    pdf.cell(200, 10, txt=wallet_name, ln=True)
+                    pdf.set_font("Arial", '', 10)
+                    pdf.multi_cell(0, 8, f"Address: {wallet_address}")
+                    pdf.image(tmpfile.name, x=10, w=50)
+                    pdf.ln(10)
+                    os.unlink(tmpfile.name)  # Cleanup
 
         # Create downloadable PDF
         pdf_output = io.BytesIO()
@@ -132,3 +135,4 @@ if uploaded_file:
         st.error("CSV file must have a column named 'Wallet Type'.")
 else:
     st.info("Please upload a CSV file to begin.")
+ 
