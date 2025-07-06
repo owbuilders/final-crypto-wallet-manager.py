@@ -112,21 +112,17 @@ if uploaded_file:
 
                 # Save QR temporarily and insert into PDF
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
-    temp_path = tmpfile.name
-    img.save(temp_path)  # Save inside the 'with' block
+                    temp_path = tmpfile.name
+                    img.save(temp_path)
 
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(200, 10, txt=wallet_name, ln=True)
+                pdf.set_font("Arial", '', 10)
+                pdf.multi_cell(0, 8, f"Address: {wallet_address}")
+                pdf.image(temp_path, x=10, w=50)
+                pdf.ln(10)
 
-img.save(temp_path)  # Save outside the 'with' block
-
-pdf.set_font("Arial", 'B', 12)
-pdf.cell(200, 10, txt=wallet_name, ln=True)
-pdf.set_font("Arial", '', 10)
-pdf.multi_cell(0, 8, f"Address: {wallet_address}")
-pdf.image(temp_path, x=10, w=50)
-pdf.ln(10)
-
-os.remove(temp_path)  # Now it’s safe to delete
-
+                os.remove(temp_path)
 
         # Create downloadable PDF
         pdf_output = io.BytesIO()
@@ -137,9 +133,10 @@ os.remove(temp_path)  # Now it’s safe to delete
             file_name="crypto_wallets.pdf",
             mime="application/pdf"
         )
-
     else:
         st.error("CSV file must have a column named 'Wallet Type'.")
 else:
     st.info("Please upload a CSV file to begin.")
+ 
+ 
  
