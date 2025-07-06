@@ -112,14 +112,19 @@ if uploaded_file:
 
                 # Save QR temporarily and insert into PDF
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
-                    img.save(tmpfile.name)
-                    pdf.set_font("Arial", 'B', 12)
-                    pdf.cell(200, 10, txt=wallet_name, ln=True)
-                    pdf.set_font("Arial", '', 10)
-                    pdf.multi_cell(0, 8, f"Address: {wallet_address}")
-                    pdf.image(tmpfile.name, x=10, w=50)
-                    pdf.ln(10)
-                    os.unlink(tmpfile.name)  # Cleanup
+    temp_path = tmpfile.name
+
+img.save(temp_path)  # Save outside the 'with' block
+
+pdf.set_font("Arial", 'B', 12)
+pdf.cell(200, 10, txt=wallet_name, ln=True)
+pdf.set_font("Arial", '', 10)
+pdf.multi_cell(0, 8, f"Address: {wallet_address}")
+pdf.image(temp_path, x=10, w=50)
+pdf.ln(10)
+
+os.remove(temp_path)  # Now it’s safe to delete
+
 
         # Create downloadable PDF
         pdf_output = io.BytesIO()
