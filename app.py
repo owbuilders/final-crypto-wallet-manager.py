@@ -8,7 +8,7 @@ import os
 import tempfile
 
 # Set your password here
-APP_PASSWORD = "wallet123"
+APP_PASSWORD = "mywallets"
 
 # Password protection
 if "unlocked" not in st.session_state:
