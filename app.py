@@ -113,6 +113,8 @@ if uploaded_file:
                 # Save QR temporarily and insert into PDF
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
     temp_path = tmpfile.name
+    img.save(temp_path)  # Save inside the 'with' block
+
 
 img.save(temp_path)  # Save outside the 'with' block
 
