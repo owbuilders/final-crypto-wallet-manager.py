@@ -7,7 +7,12 @@ from fpdf import FPDF
 import os
 import tempfile
 
+# Set your password here
 APP_PASSWORD = "mywallets"
+
+# Logo caching directory
+LOGO_DIR = "/mnt/data/coin_logos"
+os.makedirs(LOGO_DIR, exist_ok=True)
 
 # Password protection
 if "unlocked" not in st.session_state:
@@ -22,7 +27,7 @@ if not st.session_state.unlocked:
         st.error("Incorrect password.")
     st.stop()
 
-# Generate QR code
+# Function to generate QR code
 def generate_qr(wallet_address):
     qr = qrcode.QRCode(
         version=1,
@@ -35,19 +40,22 @@ def generate_qr(wallet_address):
     img = qr.make_image(fill_color='black', back_color='white')
     return img
 
-# Fetch coin logo
-def get_coin_logo(coin_name):
-    coin_name = coin_name.lower()
-    url = f"https://cryptoicons.org/api/icon/{coin_name}/64"
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            return Image.open(io.BytesIO(response.content))
-    except:
-        pass
-    return None
+# Function to download and cache coin logo
+def fetch_logo(coin_name):
+    filename = f"{coin_name.lower().replace(' ', '_')}.png"
+    path = os.path.join(LOGO_DIR, filename)
+    if not os.path.exists(path):
+        url = f"https://cryptoicons.org/api/icon/{coin_name.lower()}/200"
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                with open(path, 'wb') as f:
+                    f.write(response.content)
+        except Exception:
+            pass
+    return path if os.path.exists(path) else None
 
-# Mobile-friendly layout
+# Mobile-friendly layout tweaks
 st.markdown("""
     <style>
         .block-container {
@@ -67,10 +75,13 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# App title
 st.markdown("<h1 style='font-size:22px;text-align:center;'>Crypto Wallet Manager</h1>", unsafe_allow_html=True)
 
+# Upload CSV
 uploaded_file = st.file_uploader("Upload your wallet CSV", type="csv")
 
+# Prepare to build PDF
 pdf = FPDF()
 pdf.set_auto_page_break(auto=True, margin=15)
 
@@ -83,8 +94,12 @@ if uploaded_file:
     df['Wallet Address'] = df['Wallet Address'].astype(str).str.strip()
     df['Coin Name'] = df['Coin Name'].astype(str).str.strip().str.lower()
 
-    if 'Wallet Type' in df.columns:
-        grouped = df.groupby('Wallet Type')
+    selected_wallet = st.selectbox("Select Wallet Name", ['All'] + sorted(df['Wallet Name'].unique()))
+
+    filtered_df = df[df['Wallet Name'] == selected_wallet] if selected_wallet != 'All' else df
+
+    if 'Wallet Type' in filtered_df.columns:
+        grouped = filtered_df.groupby('Wallet Type')
 
         for wallet_type, group in grouped:
             group = group.sort_values(by='Wallet Name')
@@ -104,60 +119,51 @@ if uploaded_file:
                 wallet_address = row['Wallet Address']
                 coin_name = row['Coin Name']
 
-                # Generate QR
                 img = generate_qr(wallet_address)
+                logo_path = fetch_logo(coin_name)
 
-                # Fetch logo
-                logo_img = get_coin_logo(coin_name)
-                logo_data_uri = ""
-                if logo_img:
-                    logo_buf = io.BytesIO()
-                    logo_img.save(logo_buf, format="PNG")
-                    logo_data = base64.b64encode(logo_buf.getvalue()).decode("utf-8")
-                    logo_data_uri = f"<img src='data:image/png;base64,{logo_data}' width='24' style='vertical-align:middle;margin-right:8px;'/>"
+                # Display in app
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                data = base64.b64encode(buf.getvalue()).decode("utf-8")
+                qr_tag = f"<img src='data:image/png;base64,{data}' style='width:100%;max-width:200px;margin:10px;'/>"
 
-                # Display in Streamlit
-                qr_buf = io.BytesIO()
-                img.save(qr_buf, format="PNG")
-                qr_data = base64.b64encode(qr_buf.getvalue()).decode("utf-8")
+                logo_tag = ""
+                if logo_path:
+                    with open(logo_path, "rb") as f:
+                        logo_data = base64.b64encode(f.read()).decode("utf-8")
+                        logo_tag = f"<img src='data:image/png;base64,{logo_data}' style='height:40px;margin-left:10px;'/>"
 
                 st.markdown(f"""
                 <div style='border:1px solid #ccc;border-radius:10px;padding:12px;margin-bottom:16px;background-color:#f9f9f9;'>
-                    <h4 style='margin:0;color:#34495e;font-size:16px;'>{logo_data_uri}{wallet_name}</h4>
+                    <h4 style='margin:0;color:#34495e;font-size:16px;'>{wallet_name} ({coin_name.upper()}) {logo_tag}</h4>
                     <p style='margin:6px 0 8px 0;color:#555;font-size:14px;'><strong>Address:</strong> {wallet_address}</p>
-                    <img src='data:image/png;base64,{qr_data}' style='width:100%;max-width:300px;margin:10px auto;display:block;'/>
+                    {qr_tag}
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Save temp QR
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
                     img.save(tmpfile.name)
-                    temp_path = tmpfile.name
+                try:
+                    pdf.set_font("Arial", 'B', 12)
+                    pdf.cell(200, 10, txt=f"{wallet_name} ({coin_name.upper()})", ln=True)
+                    pdf.set_font("Arial", '', 10)
+                    pdf.multi_cell(0, 8, f"Address: {wallet_address}")
+                    pdf.image(tmpfile.name, x=10, w=50)
+                    pdf.ln(10)
+                finally:
+                    os.remove(tmpfile.name)
 
-                # PDF: Coin logo
-                if logo_img:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as logo_file:
-                        logo_img.save(logo_file.name)
-                        logo_path = logo_file.name
-                    pdf.image(logo_path, x=10, y=pdf.get_y(), w=10)
-                    os.remove(logo_path)
-
-                pdf.set_font("Arial", 'B', 12)
-                pdf.cell(0, 10, f" {wallet_name}", ln=True)
-                pdf.set_font("Arial", '', 10)
-                pdf.multi_cell(0, 8, f"Address: {wallet_address}")
-                pdf.image(temp_path, x=10, w=50)
-                pdf.ln(10)
-                os.remove(temp_path)
-
+        # Create downloadable PDF
         pdf_output = io.BytesIO()
         pdf.output(pdf_output)
         st.download_button(
             label="📄 Download Wallets PDF",
             data=pdf_output.getvalue(),
-            file_name="crypto_wallets_with_logos.pdf",
+            file_name="crypto_wallets.pdf",
             mime="application/pdf"
         )
+
     else:
         st.error("CSV file must have a column named 'Wallet Type'.")
 else:
