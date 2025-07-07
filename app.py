@@ -1,13 +1,12 @@
- import streamlit as st
+import streamlit as st
 import pandas as pd
 import qrcode
 from PIL import Image
-import io, base64
+import io, base64, requests
 from fpdf import FPDF
 import os
 import tempfile
 
-# Set your password here
 APP_PASSWORD = "mywallets"
 
 # Password protection
@@ -23,7 +22,7 @@ if not st.session_state.unlocked:
         st.error("Incorrect password.")
     st.stop()
 
-# Function to generate QR code
+# Generate QR code
 def generate_qr(wallet_address):
     qr = qrcode.QRCode(
         version=1,
@@ -36,7 +35,19 @@ def generate_qr(wallet_address):
     img = qr.make_image(fill_color='black', back_color='white')
     return img
 
-# Mobile-friendly layout tweaks
+# Fetch coin logo
+def get_coin_logo(coin_name):
+    coin_name = coin_name.lower()
+    url = f"https://cryptoicons.org/api/icon/{coin_name}/64"
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            return Image.open(io.BytesIO(response.content))
+    except:
+        pass
+    return None
+
+# Mobile-friendly layout
 st.markdown("""
     <style>
         .block-container {
@@ -56,13 +67,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# App title
 st.markdown("<h1 style='font-size:22px;text-align:center;'>Crypto Wallet Manager</h1>", unsafe_allow_html=True)
 
-# Upload CSV
 uploaded_file = st.file_uploader("Upload your wallet CSV", type="csv")
 
-# Prepare to build PDF
 pdf = FPDF()
 pdf.set_auto_page_break(auto=True, margin=15)
 
@@ -73,20 +81,10 @@ if uploaded_file:
     df.columns = df.columns.str.strip()
     df['Wallet Name'] = df['Wallet Name'].astype(str).str.strip()
     df['Wallet Address'] = df['Wallet Address'].astype(str).str.strip()
+    df['Coin Name'] = df['Coin Name'].astype(str).str.strip().str.lower()
 
-    wallet_names = df['Wallet Name'].unique().tolist()
-    selected_wallet = st.selectbox("Select Wallet Name", ["All"] + wallet_names)
-
-    filtered_df = df if selected_wallet == "All" else df[df['Wallet Name'] == selected_wallet]
-
-    coin_names = filtered_df['Coin Name'].unique().tolist() if 'Coin Name' in df.columns else []
-    selected_coin = st.selectbox("Select Coin Name", ["All"] + coin_names) if coin_names else "All"
-
-    if selected_coin != "All":
-        filtered_df = filtered_df[filtered_df['Coin Name'] == selected_coin]
-
-    if 'Wallet Type' in filtered_df.columns:
-        grouped = filtered_df.groupby('Wallet Type')
+    if 'Wallet Type' in df.columns:
+        grouped = df.groupby('Wallet Type')
 
         for wallet_type, group in grouped:
             group = group.sort_values(by='Wallet Name')
@@ -104,33 +102,52 @@ if uploaded_file:
             for _, row in group.iterrows():
                 wallet_name = row['Wallet Name']
                 wallet_address = row['Wallet Address']
+                coin_name = row['Coin Name']
 
+                # Generate QR
                 img = generate_qr(wallet_address)
 
-                buf = io.BytesIO()
-                img.save(buf, format="PNG")
-                data = base64.b64encode(buf.getvalue()).decode("utf-8")
-                img_tag = f"<img src='data:image/png;base64,{data}' style='width:100%;max-width:300px;margin:10px auto;display:block;'/>"
+                # Fetch logo
+                logo_img = get_coin_logo(coin_name)
+                logo_data_uri = ""
+                if logo_img:
+                    logo_buf = io.BytesIO()
+                    logo_img.save(logo_buf, format="PNG")
+                    logo_data = base64.b64encode(logo_buf.getvalue()).decode("utf-8")
+                    logo_data_uri = f"<img src='data:image/png;base64,{logo_data}' width='24' style='vertical-align:middle;margin-right:8px;'/>"
+
+                # Display in Streamlit
+                qr_buf = io.BytesIO()
+                img.save(qr_buf, format="PNG")
+                qr_data = base64.b64encode(qr_buf.getvalue()).decode("utf-8")
 
                 st.markdown(f"""
                 <div style='border:1px solid #ccc;border-radius:10px;padding:12px;margin-bottom:16px;background-color:#f9f9f9;'>
-                    <h4 style='margin:0;color:#34495e;font-size:16px;'>{wallet_name}</h4>
+                    <h4 style='margin:0;color:#34495e;font-size:16px;'>{logo_data_uri}{wallet_name}</h4>
                     <p style='margin:6px 0 8px 0;color:#555;font-size:14px;'><strong>Address:</strong> {wallet_address}</p>
-                    {img_tag}
+                    <img src='data:image/png;base64,{qr_data}' style='width:100%;max-width:300px;margin:10px auto;display:block;'/>
                 </div>
                 """, unsafe_allow_html=True)
 
+                # Save temp QR
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
+                    img.save(tmpfile.name)
                     temp_path = tmpfile.name
-                    img.save(temp_path)
+
+                # PDF: Coin logo
+                if logo_img:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as logo_file:
+                        logo_img.save(logo_file.name)
+                        logo_path = logo_file.name
+                    pdf.image(logo_path, x=10, y=pdf.get_y(), w=10)
+                    os.remove(logo_path)
 
                 pdf.set_font("Arial", 'B', 12)
-                pdf.cell(200, 10, txt=wallet_name, ln=True)
+                pdf.cell(0, 10, f" {wallet_name}", ln=True)
                 pdf.set_font("Arial", '', 10)
                 pdf.multi_cell(0, 8, f"Address: {wallet_address}")
                 pdf.image(temp_path, x=10, w=50)
                 pdf.ln(10)
-
                 os.remove(temp_path)
 
         pdf_output = io.BytesIO()
@@ -138,14 +155,14 @@ if uploaded_file:
         st.download_button(
             label="📄 Download Wallets PDF",
             data=pdf_output.getvalue(),
-            file_name="crypto_wallets.pdf",
+            file_name="crypto_wallets_with_logos.pdf",
             mime="application/pdf"
         )
-
     else:
         st.error("CSV file must have a column named 'Wallet Type'.")
 else:
     st.info("Please upload a CSV file to begin.")
+
  
  
  
