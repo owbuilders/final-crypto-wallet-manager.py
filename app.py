@@ -48,9 +48,11 @@ st.markdown("""
 st.markdown("<h1 style='font-size:22px;text-align:center;'>Crypto Wallet Manager</h1>", unsafe_allow_html=True)
 
 # --- Try loading local CSV as default ---
-default_df = None
-if os.path.exists("cleaned_wallets.csv"):
+try:
     default_df = pd.read_csv("cleaned_wallets.csv")
+except FileNotFoundError:
+    default_df = None
+
 
 # --- CSV Upload ---
 uploaded_file = st.file_uploader("Upload your wallet CSV (optional)", type="csv")
